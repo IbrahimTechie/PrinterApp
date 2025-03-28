@@ -1,0 +1,45 @@
+{
+  "name": "electron-react-express-app",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "cross-env NODE_ENV=development electron .",
+    "dist": "cross-env NODE_ENV=production electron-builder"
+  },
+  "build": {
+    "appId": "com.example.electronreactexpress",
+    "files": [
+      "main.js",
+      "build/**/*",
+      "server/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "extraResources": [
+      {
+        "from": "./server/.env",
+        "to": "server/.env"
+      }
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pdf-to-printer": "^5.6.0",
+    "pdfkit": "^0.16.0",
+    "qrcode": "^1.5.4"
+  }
+}
