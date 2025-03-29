@@ -13,7 +13,7 @@ app.use(cors()); // Enable CORS if your frontend runs on a different port
 app.get("/orders", (req, res) => {
   res.json({
     pending: getPendingOrders(),
-    completed: getCompletedOrders(),
+    completed: getCompletedOrders(), // Reverse the completed orders if needed
   });
 });
 

@@ -20,6 +20,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 800,
     height: 600,
+    icon: path.join(__dirname, "assets", "app-icon.ico"),
     webPreferences: {
       nodeIntegration: true, // consider security best practices for production
     },
@@ -29,8 +30,9 @@ function createWindow() {
     win.loadURL('http://localhost:3000');
   } else {
     win.loadFile(path.join(__dirname, 'build', 'index.html'));
-    win.webContents.openDevTools();
+    // win.webContents.openDevTools();
   }
+  Menu.setApplicationMenu(null);
 }
 
 app.whenReady().then(createWindow);

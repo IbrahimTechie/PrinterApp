@@ -5,11 +5,11 @@ import path from "path";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import os from "os";
-import pkg from 'pdf-to-printer';
+import pkg from "pdf-to-printer";
 import { exec } from "child_process";
 import logToFile from "./logger.js";
 
-const { print } = pkg
+const { print } = pkg;
 
 // Global order storage for dashboard
 let pendingOrders = [];
@@ -42,7 +42,7 @@ export function enqueue(order) {
     `🔄 Attempting to enqueue order: ${order.orderName} - ${order.variantName}`
   );
 
-  order.printingStatus = "Pending";
+  order.printingStatus = "Wunsch wird geprüft!";
 
   // Sanitize order name
   const sanitizedOrderName = sanitizeFilename(order.orderName);
@@ -58,15 +58,22 @@ export function enqueue(order) {
     // Check if label file exists and avoid duplicate entries
     if (
       !fs.existsSync(labelPath) &&
-      !Queue.some((q) => q.orderName === order.orderName && q.index === i + 1)
+      !Queue.some(
+        (q) =>
+          q.orderName === order.orderName &&
+          q.variantName === order.variantName &&
+          q.index === i + 1
+      )
     ) {
       // Add to our queue and to the pending orders array for the dashboard
       Queue.push({ ...order, index: i + 1 });
       pendingOrders.push({
         orderName: order.orderName,
+        productName: order.productName,
+        variantName: order.variantName,
         quantity: order.quantity,
         status: "Pending",
-        printingStatus: "Pending", // Initialize printingStatus
+        printingStatus: "wird gedruckt", // Initialize printingStatus
         index: i + 1,
       });
       console.log(
@@ -109,12 +116,12 @@ export function processQueue() {
       pendingOrders = pendingOrders.filter(
         (o) => !(o.orderName === order.orderName && o.index === order.index)
       );
-      completedOrders.push({
-        orderName: order.orderName,
-        quantity: order.quantity,
-        status: "Completed",
-        index: order.index,
-      });
+      // completedOrders.push({
+      //   orderName: order.orderName,
+      //   quantity: order.quantity,
+      //   status: "Completed",
+      //   index: order.index,
+      // });
     })
     .catch((err) => {
       console.error("❌ Error generating label:", err);
@@ -201,28 +208,34 @@ async function generateLabel(order) {
 
 async function printPDF(filePath, order) {
   logToFile(`🖨️ Attempting to print ${filePath}...`);
-  
+
   // Set initial status to "Printing"
   order.printingStatus = "Printing";
 
   try {
-    await print(filePath, { 
-      paperSize: "custom",  // or whatever name you saved
+    await print(filePath, {
+      paperSize: "custom", // or whatever name you saved
       orientation: "landscape",
       scale: "noscale",
-      silent: true
-    });    logToFile(`Print job sent for ${filePath}`);
-    order.printingStatus = "Printed";
+      silent: true,
+    });
+    logToFile(`Print job sent for ${filePath}`);
+    order.printingStatus = "Wunsch wurde erfüllt!";
+
+    // Now that printing succeeded, move the order from pending to completed
+    moveOrderToCompleted(order);
+
     console.log(`✅ Print job sent for ${filePath}`);
   } catch (error) {
     logToFile(`Error printing ${filePath}: ${error.message}`);
-    order.printingStatus = `Error: ${error.message}`;
+    order.printingStatus = `Failed: ${error.message}`;
+    // Update pendingOrders instead of removing it
+    pendingOrders.push(order)
     console.error(`❌ Error printing ${filePath}:`, error);
   }
 }
 
 export { printPDF };
-
 
 // Process the queue every 5 seconds
 setInterval(processQueue, 5000);
@@ -234,4 +247,14 @@ export function getPendingOrders() {
 
 export function getCompletedOrders() {
   return completedOrders;
+}
+
+function moveOrderToCompleted(order) {
+  // Remove the order from pendingOrders
+  pendingOrders = pendingOrders.filter(
+    (o) => !(o.orderName === order.orderName && o.index === order.index)
+  );
+
+  // Add it to the completedOrders
+  completedOrders.push(order);
 }

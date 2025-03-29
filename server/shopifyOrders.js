@@ -1,13 +1,13 @@
 // server/shopifyOrders.js
 import dotenv from "dotenv";
 import { enqueue } from "./orderQueue.js"; // updated import
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, './.env') });
+dotenv.config({ path: path.join(__dirname, "./.env") });
 
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE || "";
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || "";
@@ -15,13 +15,19 @@ const PRODUCT_IDS = process.env.SHOPIFY_PRODUCT_IDS || "";
 const PRODUCT_ID_ARRAY = PRODUCT_IDS ? PRODUCT_IDS.split(",") : [];
 
 if (!SHOPIFY_STORE || !SHOPIFY_ACCESS_TOKEN || PRODUCT_ID_ARRAY.length === 0) {
-  console.error("⚠️ Missing environment variables. Please check your .env file.");
+  console.error(
+    "⚠️ Missing environment variables. Please check your .env file."
+  );
   process.exit(1);
 }
 
+let isFetching = false;
+
 async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
   const query = `{
-    orders(first: 250${cursorIndex ? `, after: \"${cursorIndex}\"` : ""}, query: "fulfillment_status:unfulfilled financial_status:paid") {
+    orders(first: 250${
+      cursorIndex ? `, after: \"${cursorIndex}\"` : ""
+    }, query: "fulfillment_status:unfulfilled financial_status:paid") {
       edges {
         cursor
         node {
@@ -69,7 +75,9 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
     );
 
     if (!response.ok) {
-      console.error(`❌ HTTP Error: ${response.status} - ${response.statusText}`);
+      console.error(
+        `❌ HTTP Error: ${response.status} - ${response.statusText}`
+      );
       throw new Error(`Error fetching data: ${response.statusText}`);
     }
 
@@ -91,7 +99,13 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
       order.lineItems.edges.forEach((item) => {
         const productId = item.node.product?.id;
         if (PRODUCT_ID_ARRAY.includes(productId)) {
-          const orderKey = `${order.name}_${item.node.variant?.id}`;
+          // Convert properties to a string to include them in the key
+          const propertiesString = item.node.customAttributes
+            .map((attr) => `${attr.key}:${attr.value}`)
+            .join("|");
+
+          // Create a unique order key with order name, variant ID, and properties
+          const orderKey = `${order.name}_${item.node.variant?.id}_${propertiesString}`;
           if (!allOrders[orderKey]) {
             allOrders[orderKey] = {
               orderName: order.name,
@@ -101,18 +115,27 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
               quantity: item.node.quantity,
               properties: item.node.customAttributes || [],
             };
-            console.log(`✅ New order added: ${order.name} - ${item.node.variant?.title}`);
+            console.log(
+              `✅ New order added: ${order.name} - ${item.node.variant?.title}`
+            );
           } else {
             allOrders[orderKey].quantity += item.node.quantity;
-            console.log(`🔄 Updated order quantity for ${order.name} - ${item.node.variant?.title}: ${allOrders[orderKey].quantity}`);
+            console.log(
+              `🔄 Updated order quantity for ${order.name} - ${item.node.variant?.title}: ${allOrders[orderKey].quantity}`
+            );
           }
         }
       });
     });
 
     if (responseData.data.orders.pageInfo.hasNextPage) {
-      const nextCursor = responseData.data.orders.edges[responseData.data.orders.edges.length - 1].cursor;
-      console.log(`🔄 Fetching next page of orders using cursor: ${nextCursor}`);
+      const nextCursor =
+        responseData.data.orders.edges[
+          responseData.data.orders.edges.length - 1
+        ].cursor;
+      console.log(
+        `🔄 Fetching next page of orders using cursor: ${nextCursor}`
+      );
       return fetchFilteredShopifyOrders(nextCursor, allOrders);
     }
 
@@ -122,7 +145,10 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
     if (ordersArray.length > 0) {
       console.log("🔄 Enqueuing orders...");
       ordersArray.forEach((order) => enqueue(order));
-      console.log("✅ Orders enqueued:", ordersArray.map((order) => order.orderName));
+      console.log(
+        "✅ Orders enqueued:",
+        ordersArray.map((order) => order.orderName)
+      );
     } else {
       console.log("⚠️ No orders matched the specified product IDs.");
     }
@@ -135,12 +161,34 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
 }
 
 // Initial fetch
-fetchFilteredShopifyOrders();
+if (!isFetching) {
+  isFetching = true;
+  fetchFilteredShopifyOrders()
+    .then(() => {
+      isFetching = false;
+    })
+    .catch((err) => {
+      console.error("Initial fetch error:", err);
+      isFetching = false;
+    });
+}
 
-// Poll for new orders every minute
+// Poll for new orders every minute, avoiding overlap
 setInterval(() => {
+  if (isFetching) {
+    console.log("⏳ Already fetching orders, skipping this poll.");
+    return;
+  }
+  isFetching = true;
   console.log("⏳ Checking for new orders...");
-  fetchFilteredShopifyOrders();
+  fetchFilteredShopifyOrders()
+    .then(() => {
+      isFetching = false;
+    })
+    .catch((error) => {
+      console.error("Error during fetch:", error);
+      isFetching = false;
+    });
 }, 60000);
 
 export { fetchFilteredShopifyOrders };
