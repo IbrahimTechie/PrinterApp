@@ -169,7 +169,7 @@ async function generateLabel(order) {
     });
     doc
       .fontSize(6)
-      .text(`DD.MM.YY     ${order.index}/${order.quantity}`, 5, 78);
+      .text(`${order.date}     ${order.index}/${order.quantity}`, 5, 78);
 
     // Render properties in the right column
     let yPosition = 5;

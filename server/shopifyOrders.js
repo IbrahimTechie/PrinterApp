@@ -33,6 +33,7 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
         node {
           id
           name
+          createdAt
           lineItems(first: 250) {
             edges {
               node {
@@ -104,6 +105,9 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
             .map((attr) => `${attr.key}:${attr.value}`)
             .join("|");
 
+          const date = new Date(order.createdAt);
+          const formattedDate = date.toLocaleDateString("en-GB").split("/").join(".");
+
           // Create a unique order key with order name, variant ID, and properties
           const orderKey = `${order.name}_${item.node.variant?.id}_${propertiesString}`;
           if (!allOrders[orderKey]) {
@@ -114,6 +118,7 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
               variantName: item.node.variant?.title,
               quantity: item.node.quantity,
               properties: item.node.customAttributes || [],
+              date: formattedDate
             };
             console.log(
               `✅ New order added: ${order.name} - ${item.node.variant?.title}`
