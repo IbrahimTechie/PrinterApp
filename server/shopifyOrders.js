@@ -24,6 +24,9 @@ if (!SHOPIFY_STORE || !SHOPIFY_ACCESS_TOKEN || PRODUCT_ID_ARRAY.length === 0) {
 let isFetching = false;
 
 async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
+  console.log("🚀 fetchFilteredShopifyOrders called with cursor:", cursorIndex);
+  console.log("📊 Current allOrders count:", Object.keys(allOrders).length);
+  
   const query = `{
     orders(first: 250${
       cursorIndex ? `, after: \"${cursorIndex}\"` : ""
@@ -63,6 +66,10 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
 
   try {
     console.log("🔄 Fetching Shopify orders...");
+    console.log("🔗 Store:", SHOPIFY_STORE);
+    console.log("🔑 Token length:", SHOPIFY_ACCESS_TOKEN ? SHOPIFY_ACCESS_TOKEN.length : 0);
+    console.log("📦 Product IDs to filter:", PRODUCT_ID_ARRAY);
+    
     const response = await fetch(
       `https://${SHOPIFY_STORE}/admin/api/2024-07/graphql.json`,
       {
@@ -83,6 +90,7 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
     }
 
     const responseData = await response.json();
+    console.log("📝 Raw response data keys:", Object.keys(responseData));
 
     if (responseData.errors) {
       console.error("⚠️ GraphQL Errors:", responseData.errors);
@@ -91,14 +99,20 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
 
     if (!responseData.data?.orders?.edges) {
       console.error("⚠️ Unexpected API response structure.");
+      console.log("📋 Response data:", JSON.stringify(responseData, null, 2));
       throw new Error("Shopify API response is invalid.");
     }
 
     console.log("🔄 Extracting and transforming order data...");
+    console.log("📊 Orders received:", responseData.data.orders.edges.length);
     responseData.data.orders.edges.forEach((edge) => {
       const order = edge.node;
+      console.log("🔍 Processing order:", order.name, "with", order.lineItems.edges.length, "line items");
+      
       order.lineItems.edges.forEach((item) => {
         const productId = item.node.product?.id;
+        console.log("🏷️ Checking product ID:", productId, "against filter:", PRODUCT_ID_ARRAY.includes(productId));
+        
         if (PRODUCT_ID_ARRAY.includes(productId)) {
           // Convert properties to a string to include them in the key
           const propertiesString = item.node.customAttributes
@@ -110,6 +124,8 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
 
           // Create a unique order key with order name, variant ID, and properties
           const orderKey = `${order.name}_${item.node.variant?.id}_${propertiesString}`;
+          console.log("🗝️ Generated order key:", orderKey);
+          
           if (!allOrders[orderKey]) {
             allOrders[orderKey] = {
               orderName: order.name,
@@ -129,6 +145,8 @@ async function fetchFilteredShopifyOrders(cursorIndex = null, allOrders = {}) {
               `🔄 Updated order quantity for ${order.name} - ${item.node.variant?.title}: ${allOrders[orderKey].quantity}`
             );
           }
+        } else {
+          console.log("❌ Product ID not in filter list, skipping:", productId);
         }
       });
     });

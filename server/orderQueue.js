@@ -32,12 +32,22 @@ if (!fs.existsSync(PROCESSED_LABELS_DIR)) {
   );
 }
 
+// DEV ONLY: Set this to an order name to only print that order during development
+const DEV_ONLY_ORDER_NAME = null;
+
 // Function to sanitize filenames
 function sanitizeFilename(filename) {
   return filename.replace(/[<>:"/\\|?*]/g, "_");
 }
 
 export function enqueue(order) {
+  // DEV ONLY: Skip orders that don't match the specified order name
+  console.log("ENV DEV_ONLY_ORDER_NAME:", DEV_ONLY_ORDER_NAME, "Order:", order.orderName);
+  if (DEV_ONLY_ORDER_NAME && order.orderName !== DEV_ONLY_ORDER_NAME) {
+    console.log(`⚠️ Skipping order ${order.orderName} (DEV_ONLY_ORDER_NAME active)`);
+    return;
+  }
+
   console.log(
     `🔄 Attempting to enqueue order: ${order.orderName} - ${order.variantName}`
   );
@@ -62,7 +72,8 @@ export function enqueue(order) {
         (q) =>
           q.orderName === order.orderName &&
           q.variantName === order.variantName &&
-          q.index === i + 1
+          q.index === i + 1 &&
+          sortedProps(q.properties) === sortedProps(order.properties)
       )
     ) {
       // Add to our queue and to the pending orders array for the dashboard
@@ -258,3 +269,5 @@ function moveOrderToCompleted(order) {
   // Add it to the completedOrders
   completedOrders.push(order);
 }
+
+const sortedProps = (props) => JSON.stringify([...(props || [])].sort((a, b) => a.key.localeCompare(b.key)));
