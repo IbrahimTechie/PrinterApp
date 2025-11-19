@@ -150,43 +150,100 @@ async function generateLabel(order) {
   await QRCode.toFile(tempQRPath, order.orderName, { margin: 0 });
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: [162, 90], margin: 0 });
+    // Label size: 75 x 40 mm
+    // Convert mm -> points for PDFKit (1 in = 72 pt, 1 in = 25.4 mm)
+    const LABEL_WIDTH_MM = 75;
+    const LABEL_HEIGHT_MM = 40;
+    const mmToPt = (mm) => (mm / 25.4) * 72;
+    const doc = new PDFDocument({
+      size: [mmToPt(LABEL_WIDTH_MM), mmToPt(LABEL_HEIGHT_MM)],
+      margin: 0,
+    });
     const labelFileName = `${order.orderName}_${order.index}-${order.quantity}.pdf`;
     const labelPath = path.join(PROCESSED_LABELS_DIR, labelFileName);
     const writeStream = fs.createWriteStream(labelPath);
     doc.pipe(writeStream);
 
-    const leftColumnStartX = 5;
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(6)
-      .text(order.orderName, leftColumnStartX, 5, {
-        width: 45,
-        align: "center",
-      })
-      .text(order.productName, leftColumnStartX, 14, {
-        width: 45,
-        align: "center",
-      })
-      .text(order.variantName, leftColumnStartX, 23, {
-        width: 45,
-        align: "center",
-      });
+    // Layout calculations based on actual page size so content scales with PDF dimensions
+    // Global horizontal shift (points) to move left column and related items to the right
+    const GLOBAL_SHIFT_PT = 15;
+    const leftColumnStartX = 5 + GLOBAL_SHIFT_PT;
+    // Configurable sizes (change these to increase/decrease elements while preserving alignment)
+    const LEFT_COLUMN_WIDTH_MM = 20; // width of left column in mm
+    const HEADER_FONT_SIZE = 8; // pts for order/product/variant
+    const DATE_FONT_SIZE = 7; // pts for date line
+    const QR_SIZE_MM = 20; // QR size in mm
 
-    doc.image(tempQRPath, leftColumnStartX + 5, 33, {
-      width: 35,
-      height: 35,
+    const leftColumnWidth = mmToPt(LEFT_COLUMN_WIDTH_MM);
+    const rightColumnX = leftColumnStartX + leftColumnWidth + 5;
+    // Shift properties slightly to the right of the right column boundary
+    const propertiesOffset = 20; // move properties this many points to the right
+    const propertiesX = rightColumnX + propertiesOffset;
+    const textWidth = Math.max(50, doc.page.width - propertiesX - 5);
+    const maxHeight = Math.max(0, doc.page.height - 10); // leave small bottom margin
+    const dateY = Math.max(10, doc.page.height - 10);
+
+    // Spacing control between property lines (keep font size dynamic)
+    const lineGap = 0.5; // smaller gap between property lines
+
+    // Compute available vertical space for properties: from top (y=5) to just above date
+    const propertiesTopY = 5;
+    const propertiesAvailableHeight = Math.max(0, dateY - propertiesTopY - 6);
+
+    // Dynamic font sizing: choose the largest font size that fits all properties
+    function chooseBestFontSize(properties) {
+      const MIN_FONT = 5; // smallest readable font
+      const MAX_FONT = 10; // starting upper bound
+      const STEP = 0.25;
+
+      // Use Helvetica for measurements
+      doc.font("Helvetica");
+
+      for (let font = MAX_FONT; font >= MIN_FONT; font -= STEP) {
+        doc.fontSize(font);
+        let totalHeight = 0;
+        for (const { key, value } of properties) {
+          if (!value) continue;
+          const cleanedKey = key.replace(/^Sorte\s*/, "");
+          const propertyText = `${cleanedKey}: ${value}`;
+          const h = doc.heightOfString(propertyText, { width: textWidth });
+          totalHeight += h + lineGap;
+          if (totalHeight > propertiesAvailableHeight) break;
+        }
+        if (totalHeight <= propertiesAvailableHeight) return font;
+      }
+      return MIN_FONT;
+    }
+
+    // Header (order/product/variant) centered in left column
+    const headerTopY = 5;
+    const headerLineHeight = HEADER_FONT_SIZE + 2;
+    doc.font("Helvetica-Bold");
+    doc.fontSize(HEADER_FONT_SIZE).text(order.orderName, leftColumnStartX, headerTopY, {
+      width: leftColumnWidth,
       align: "center",
     });
-    doc
-      .fontSize(6)
-      .text(`${order.date}     ${order.index}/${order.quantity}`, 5, 78);
+    doc.fontSize(HEADER_FONT_SIZE).text(order.productName, leftColumnStartX, headerTopY + headerLineHeight, {
+      width: leftColumnWidth,
+      align: "center",
+    });
+    doc.fontSize(HEADER_FONT_SIZE).text(order.variantName, leftColumnStartX, headerTopY + headerLineHeight * 2, {
+      width: leftColumnWidth,
+      align: "center",
+    });
+
+    // QR size and position (centered within left column)
+    const qrSizePt = mmToPt(QR_SIZE_MM);
+    const qrX = leftColumnStartX + Math.max(0, (leftColumnWidth - qrSizePt) / 2);
+    const qrY = headerTopY + headerLineHeight * 3 + 4; // small gap after header
+    doc.image(tempQRPath, qrX, qrY, { width: qrSizePt, height: qrSizePt, align: "center" });
+
+    // Date line at bottom-left using DATE_FONT_SIZE
+    doc.fontSize(DATE_FONT_SIZE).text(`${order.date}     ${order.index}/${order.quantity}`, leftColumnStartX, dateY);
 
     // Render properties in the right column
-    let yPosition = 5;
-    const maxHeight = 85;
-    const propertyFontSize = 5;
-    const textWidth = 95;
+    let yPosition = propertiesTopY;
+    const propertyFontSize = chooseBestFontSize(order.properties);
     doc.font("Helvetica").fontSize(propertyFontSize);
     order.properties.forEach(({ key, value }) => {
       if (value) {
@@ -196,8 +253,8 @@ async function generateLabel(order) {
           width: textWidth,
         });
         if (yPosition + textHeight <= maxHeight) {
-          doc.text(propertyText, 55, yPosition, { width: textWidth });
-          yPosition += textHeight + 2;
+          doc.text(propertyText, propertiesX, yPosition, { width: textWidth });
+          yPosition += textHeight + lineGap;
         }
       }
     });
