@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
+import crypto from "crypto";
 import os from "os";
 import pkg from "pdf-to-printer";
 import { exec } from "child_process";
@@ -54,13 +55,16 @@ export function enqueue(order) {
 
   order.printingStatus = "Wunsch wird geprüft!";
 
-  // Sanitize order name
+  // Sanitize order name and include a short hash of properties to avoid filename collisions
   const sanitizedOrderName = sanitizeFilename(order.orderName);
+  const propsHash = crypto
+    .createHash("md5")
+    .update(sortedProps(order.properties || []))
+    .digest("hex")
+    .slice(0, 8);
 
   for (let i = 0; i < order.quantity; i++) {
-    const labelFileName = `${sanitizedOrderName}_${i + 1}-${
-      order.quantity
-    }.pdf`;
+    const labelFileName = `${sanitizedOrderName}_${i + 1}-${order.quantity}_${propsHash}.pdf`;
     const labelPath = path.join(PROCESSED_LABELS_DIR, labelFileName);
 
     console.log(`📄 Checking label file path: ${labelPath}`);
@@ -159,7 +163,13 @@ async function generateLabel(order) {
       size: [mmToPt(LABEL_WIDTH_MM), mmToPt(LABEL_HEIGHT_MM)],
       margin: 0,
     });
-    const labelFileName = `${order.orderName}_${order.index}-${order.quantity}.pdf`;
+    const sanitizedOrderName = sanitizeFilename(order.orderName);
+    const propsHash = crypto
+      .createHash("md5")
+      .update(sortedProps(order.properties || []))
+      .digest("hex")
+      .slice(0, 8);
+    const labelFileName = `${sanitizedOrderName}_${order.index}-${order.quantity}_${propsHash}.pdf`;
     const labelPath = path.join(PROCESSED_LABELS_DIR, labelFileName);
     const writeStream = fs.createWriteStream(labelPath);
     doc.pipe(writeStream);
